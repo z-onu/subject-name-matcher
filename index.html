@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subject Name Matcher Tool</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        const SubjectMatcherTool = () => {
+          const [file1Data, setFile1Data] = useState(null);
+          const [file2Data, setFile2Data] = useState(null);
+          const [results, setResults] = useState(null);
+          const [file1Name, setFile1Name] = useState('');
+          const [file2Name, setFile2Name] = useState('');
+
+          const cleanSubjectName = (name) => {
+            if (!name || name === null || name === undefined) {
+              return '';
+            }
+            
+            let nameStr = String(name).trim().toUpperCase();
+            nameStr = nameStr.replace(/\s+/g, ' ');
+            
+            if (nameStr === 'ENGINEERING ETHICS AND SUSTAINABLEDEVELOPMENT') {
+              nameStr = 'ENGINEERING ETHICS AND SUSTAINABLE DEVELOPMENT';
+            }
+            
+            return nameStr;
+          };
+
+          const processFile = (file, setData, setFileName) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+              try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                
+                const headers = jsonData[0];
+                const nameIndex = headers.findIndex(h => 
+                  String(h).toLowerCase().includes('name') || 
+                  String(h).toLowerCase().includes('subject')
+                );
+                
+                if (nameIndex === -1) {
+                  alert('Could not find a "Name" column in the file. Please ensure your file has a column containing subject names.');
+                  return;
+                }
+                
+                const processedData = jsonData.slice(1)
+                  .filter(row => row[nameIndex])
+                  .map(row => ({
+                    originalName: row[nameIndex],
+                    cleanedName: cleanSubjectName(row[nameIndex])
+                  }));
+                
+                setData(processedData);
+                setFileName(file.name);
+                setResults(null);
+              } catch (error) {
+                alert('Error reading file. Please ensure it is a valid Excel or CSV file.');
+                console.error(error);
+              }
+            };
+            
+            reader.readAsArrayBuffer(file);
+          };
+
+          const handleFile1Change = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              processFile(file, setFile1Data, setFile1Name);
+            }
+          };
+
+          const handleFile2Change = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              processFile(file, setFile2Data, setFile2Name);
+            }
+          };
+
+          const findCommonSubjects = () => {
+            if (!file1Data || !file2Data) {
+              alert('Please upload both files first.');
+              return;
+            }
+
+            const names1 = new Set(file1Data.map(item => item.cleanedName).filter(name => name));
+            const names2 = new Set(file2Data.map(item => item.cleanedName).filter(name => name));
+            
+            const commonNames = Array.from(names1).filter(name => names2.has(name)).sort();
+            const uniqueToFile1 = Array.from(names1).filter(name => !names2.has(name)).sort();
+            const uniqueToFile2 = Array.from(names2).filter(name => !names1.has(name)).sort();
+            
+            setResults({
+              commonNames,
+              uniqueToFile1,
+              uniqueToFile2,
+              totalFile1: names1.size,
+              totalFile2: names2.size
+            });
+          };
+
+          const exportResults = () => {
+            if (!results) return;
+
+            const wb = XLSX.utils.book_new();
+            
+            const commonSheet = XLSX.utils.json_to_sheet(
+              results.commonNames.map((name, idx) => ({ 'S.No': idx + 1, 'Common Subject Name': name }))
+            );
+            XLSX.utils.book_append_sheet(wb, commonSheet, 'Common Subjects');
+            
+            const unique1Sheet = XLSX.utils.json_to_sheet(
+              results.uniqueToFile1.map((name, idx) => ({ 'S.No': idx + 1, 'Subject Name': name }))
+            );
+            XLSX.utils.book_append_sheet(wb, unique1Sheet, 'Only in File 1');
+            
+            const unique2Sheet = XLSX.utils.json_to_sheet(
+              results.uniqueToFile2.map((name, idx) => ({ 'S.No': idx + 1, 'Subject Name': name }))
+            );
+            XLSX.utils.book_append_sheet(wb, unique2Sheet, 'Only in File 2');
+            
+            const summarySheet = XLSX.utils.json_to_sheet([
+              { Metric: 'Total Subjects in File 1', Count: results.totalFile1 },
+              { Metric: 'Total Subjects in File 2', Count: results.totalFile2 },
+              { Metric: 'Common Subjects', Count: results.commonNames.length },
+              { Metric: 'Only in File 1', Count: results.uniqueToFile1.length },
+              { Metric: 'Only in File 2', Count: results.uniqueToFile2.length }
+            ]);
+            XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+            
+            XLSX.writeFile(wb, 'Subject_Comparison_Results.xlsx');
+          };
+
+          // SVG Icons as components
+          const Upload = () => (
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+          );
+
+          const CheckCircle = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          );
+
+          const FileText = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          );
+
+          const AlertCircle = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          );
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+              <div className="max-w-6xl mx-auto">
+                <div className="bg-white rounded-lg shadow-lg p-8">
+                  <div className="text-center mb-8">
+                    <h1 className="text-3xl font-bold text-gray-800 mb-2">Subject Name Matcher</h1>
+                    <p className="text-gray-600">Compare and find common subjects between two Excel/CSV files</p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6 mb-8">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition">
+                      <div className="text-center">
+                        <div className="mx-auto mb-4 text-blue-500"><Upload /></div>
+                        <h3 className="text-lg font-semibold mb-2">File 1</h3>
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={handleFile1Change}
+                          className="hidden"
+                          id="file1"
+                        />
+                        <label
+                          htmlFor="file1"
+                          className="cursor-pointer bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition inline-block"
+                        >
+                          Choose File
+                        </label>
+                        {file1Name && (
+                          <div className="mt-4 flex items-center justify-center text-green-600">
+                            <CheckCircle />
+                            <span className="text-sm ml-2">{file1Name}</span>
+                          </div>
+                        )}
+                        {file1Data && (
+                          <p className="text-sm text-gray-600 mt-2">
+                            {file1Data.length} subjects loaded
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-indigo-500 transition">
+                      <div className="text-center">
+                        <div className="mx-auto mb-4 text-indigo-500"><Upload /></div>
+                        <h3 className="text-lg font-semibold mb-2">File 2</h3>
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          onChange={handleFile2Change}
+                          className="hidden"
+                          id="file2"
+                        />
+                        <label
+                          htmlFor="file2"
+                          className="cursor-pointer bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600 transition inline-block"
+                        >
+                          Choose File
+                        </label>
+                        {file2Name && (
+                          <div className="mt-4 flex items-center justify-center text-green-600">
+                            <CheckCircle />
+                            <span className="text-sm ml-2">{file2Name}</span>
+                          </div>
+                        )}
+                        {file2Data && (
+                          <p className="text-sm text-gray-600 mt-2">
+                            {file2Data.length} subjects loaded
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-center mb-8">
+                    <button
+                      onClick={findCommonSubjects}
+                      disabled={!file1Data || !file2Data}
+                      className={`px-8 py-3 rounded-lg font-semibold text-white transition ${
+                        file1Data && file2Data
+                          ? 'bg-green-500 hover:bg-green-600 cursor-pointer'
+                          : 'bg-gray-300 cursor-not-allowed'
+                      }`}
+                    >
+                      Compare Files
+                    </button>
+                  </div>
+
+                  {results && (
+                    <div className="space-y-6">
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-green-800 mb-1">Common Subjects</h4>
+                          <p className="text-3xl font-bold text-green-600">{results.commonNames.length}</p>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-blue-800 mb-1">Only in File 1</h4>
+                          <p className="text-3xl font-bold text-blue-600">{results.uniqueToFile1.length}</p>
+                        </div>
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-indigo-800 mb-1">Only in File 2</h4>
+                          <p className="text-3xl font-bold text-indigo-600">{results.uniqueToFile2.length}</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-6">
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Common Subject Names</h3>
+                        <div className="max-h-96 overflow-y-auto">
+                          {results.commonNames.length > 0 ? (
+                            <ul className="space-y-2">
+                              {results.commonNames.map((name, idx) => (
+                                <li key={idx} className="flex items-start">
+                                  <span className="text-green-500 mr-3 mt-1">✓</span>
+                                  <span className="text-gray-700">{name}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-gray-500 text-center py-4">No common subjects found</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-center">
+                        <button
+                          onClick={exportResults}
+                          className="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold transition inline-flex items-center"
+                        >
+                          <FileText />
+                          <span className="ml-2">Export Results to Excel</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <div className="text-blue-500 mr-3 flex-shrink-0 mt-1"><AlertCircle /></div>
+                      <div className="text-sm text-gray-700">
+                        <p className="font-semibold mb-1">How it works:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Upload two Excel or CSV files containing subject names</li>
+                          <li>The tool automatically cleans names (removes extra spaces, converts to uppercase)</li>
+                          <li>Finds common subjects and shows unique subjects in each file</li>
+                          <li>Export detailed results to Excel with multiple sheets</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<SubjectMatcherTool />, document.getElementById('root'));
+    </script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test Files
+test-data/
+*.csv
+*.xlsx
+*.xls
+
+# Logs
+*.log
+
+# Dependencies (if using npm later)
+node_modules/
+package-lock.json
+
+# Build files
+dist/
+build/
